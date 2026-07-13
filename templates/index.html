@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PAI Portal Scraper</title>
+<style>
+  :root {
+    --saffron: #F26522;
+    --blue: #2AA7DF;
+    --bg: #f7f8fa;
+    --panel: #ffffff;
+    --border: #e2e5ea;
+    --text: #1f2430;
+    --muted: #6b7280;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 32px 16px;
+  }
+  .wrap { max-width: 780px; margin: 0 auto; }
+  h1 {
+    font-size: 22px;
+    margin: 0 0 4px 0;
+  }
+  .subtitle { color: var(--muted); margin: 0 0 24px 0; font-size: 14px; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  label { font-size: 13px; font-weight: 600; color: var(--muted); display:block; margin-bottom: 6px; }
+  select, button {
+    font-size: 14px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+  select { width: 100%; background: #fff; }
+  .row { display: flex; gap: 12px; align-items: flex-end; margin-top: 14px; flex-wrap: wrap; }
+  .row > div { flex: 1; min-width: 220px; }
+  button {
+    background: var(--saffron);
+    color: white;
+    border: none;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity .15s;
+  }
+  button:hover { opacity: .9; }
+  button.secondary {
+    background: #fff;
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin-top: 10px; }
+  .status-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 16px;
+    font-size: 13px;
+  }
+  .status-grid div span.label { color: var(--muted); display:block; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
+  .status-grid div span.value { font-weight: 600; }
+  .progress-bar {
+    height: 10px;
+    background: #eef0f3;
+    border-radius: 6px;
+    overflow: hidden;
+    margin-top: 14px;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--blue), var(--saffron));
+    width: 0%;
+    transition: width .3s ease;
+  }
+  #log {
+    background: #0f1117;
+    color: #c9d1d9;
+    font-family: "SF Mono", Consolas, monospace;
+    font-size: 12px;
+    padding: 14px;
+    border-radius: 8px;
+    height: 260px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    line-height: 1.5;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .badge.idle { background: #eef0f3; color: var(--muted); }
+  .badge.running { background: #fff3ea; color: var(--saffron); }
+  .badge.done { background: #e8f7ee; color: #1a9f56; }
+  .badge.error { background: #fdeaea; color: #d64545; }
+  a.download-link {
+    display: inline-block;
+    margin-top: 12px;
+    background: #1a9f56;
+    color: white;
+    text-decoration: none;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .preview-note { font-size: 12px; color: var(--muted); margin: 0 0 10px 0; }
+  .preview-table-wrap {
+    overflow: auto;
+    max-height: 420px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  table.preview-table {
+    border-collapse: collapse;
+    font-size: 12px;
+    white-space: nowrap;
+    width: 100%;
+  }
+  table.preview-table th, table.preview-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+  }
+  table.preview-table thead th {
+    position: sticky;
+    top: 0;
+    background: #f2f4f7;
+    color: var(--text);
+    z-index: 1;
+  }
+  table.preview-table tbody tr:nth-child(even) { background: #fafbfc; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>PAI Portal Gram Panchayat Scraper</h1>
+  <p class="subtitle">Select a state, then start the scrape. It walks every District &rarr; Block and pulls the results table automatically.</p>
+
+  <div class="panel">
+    <label for="stateSelect">State / UT</label>
+    <select id="stateSelect">
+      {% for s in states %}
+      <option value="{{ s }}">{{ s }}</option>
+      {% endfor %}
+    </select>
+
+    <div class="checkbox-row">
+      <input type="checkbox" id="headlessCheck" checked>
+      <label style="margin:0;" for="headlessCheck">Run browser headless (uncheck to watch Chrome do it live)</label>
+    </div>
+
+    <div class="row">
+      <div><button id="startBtn" onclick="startScrape()">Start Scraping</button></div>
+      <div><button class="secondary" id="stopBtn" onclick="stopScrape()" disabled>Stop</button></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <span class="badge idle" id="statusBadge">Idle</span>
+    <div class="status-grid">
+      <div><span class="label">State</span><span class="value" id="valState">-</span></div>
+      <div><span class="label">Rows collected</span><span class="value" id="valRows">0</span></div>
+      <div><span class="label">Current district</span><span class="value" id="valDistrict">-</span></div>
+      <div><span class="label">Current block</span><span class="value" id="valBlock">-</span></div>
+      <div><span class="label">Districts done</span><span class="value" id="valDistrictsDone">0 / 0</span></div>
+      <div><span class="label">Progress</span><span class="value" id="valPct">0%</span></div>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+    <div id="downloadArea"></div>
+  </div>
+
+  <div class="panel">
+    <label style="margin-bottom:8px;">Live log</label>
+    <div id="log"></div>
+  </div>
+
+  <div class="panel" id="previewPanel" style="display:none;">
+    <label style="margin-bottom:8px;">Data preview</label>
+    <p class="preview-note" id="previewNote"></p>
+    <div class="preview-table-wrap" id="previewTableWrap"></div>
+  </div>
+</div>
+
+<script>
+let polling = null;
+
+function setBadge(state) {
+  const badge = document.getElementById('statusBadge');
+  badge.className = 'badge ' + state;
+  const labels = { idle: 'Idle', running: 'Running', done: 'Done', error: 'Error' };
+  badge.textContent = labels[state] || state;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function renderPreview(columns, rows, truncated, totalRows) {
+  const panel = document.getElementById('previewPanel');
+  if (!columns || !rows || !rows.length) {
+    panel.style.display = 'none';
+    return;
+  }
+
+  const thead = '<thead><tr>' + columns.map(c => `<th>${escapeHtml(c)}</th>`).join('') + '</tr></thead>';
+  const tbody = '<tbody>' + rows.map(r =>
+    '<tr>' + r.map(v => `<td>${escapeHtml(v)}</td>`).join('') + '</tr>'
+  ).join('') + '</tbody>';
+
+  document.getElementById('previewTableWrap').innerHTML =
+    `<table class="preview-table">${thead}${tbody}</table>`;
+  document.getElementById('previewNote').textContent = truncated
+    ? `Showing first ${rows.length} of ${totalRows} rows. Download the Excel file for the full data.`
+    : `Showing all ${rows.length} rows.`;
+  panel.style.display = 'block';
+}
+
+async function startScrape() {
+  const state = document.getElementById('stateSelect').value;
+  const headless = document.getElementById('headlessCheck').checked;
+  document.getElementById('startBtn').disabled = true;
+  document.getElementById('downloadArea').innerHTML = '';
+  document.getElementById('log').textContent = '';
+  document.getElementById('previewPanel').style.display = 'none';
+
+  const res = await fetch('/api/start', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({state, headless})
+  });
+  const data = await res.json();
+  if (!data.ok) {
+    alert(data.error || 'Failed to start');
+    document.getElementById('startBtn').disabled = false;
+    return;
+  }
+  document.getElementById('stopBtn').disabled = false;
+  setBadge('running');
+  poll();
+}
+
+async function stopScrape() {
+  await fetch('/api/stop', { method: 'POST' });
+}
+
+async function poll() {
+  if (polling) clearInterval(polling);
+  polling = setInterval(async () => {
+    const res = await fetch('/api/status');
+    const s = await res.json();
+
+    document.getElementById('valState').textContent = s.state_selected || '-';
+    document.getElementById('valRows').textContent = s.rows_collected;
+    document.getElementById('valDistrict').textContent = s.current_district || '-';
+    document.getElementById('valBlock').textContent = s.current_block || '-';
+    document.getElementById('valDistrictsDone').textContent = `${s.districts_done} / ${s.districts_total}`;
+    document.getElementById('valPct').textContent = s.progress_pct + '%';
+    document.getElementById('progressFill').style.width = s.progress_pct + '%';
+    document.getElementById('log').textContent = s.logs.join('\n');
+    document.getElementById('log').scrollTop = document.getElementById('log').scrollHeight;
+
+    if (s.error) {
+      setBadge('error');
+    } else if (s.running) {
+      setBadge('running');
+    } else if (s.done) {
+      setBadge('done');
+    }
+
+    if (!s.running) {
+      document.getElementById('startBtn').disabled = false;
+      document.getElementById('stopBtn').disabled = true;
+      clearInterval(polling);
+
+      if (s.output_ready) {
+        document.getElementById('downloadArea').innerHTML =
+          `<a class="download-link" href="/api/download">Download ${s.output_filename}</a>`;
+        renderPreview(s.preview_columns, s.preview_rows, s.preview_truncated, s.rows_collected);
+      }
+    }
+  }, 2000);
+}
+</script>
+</body>
+</html>
