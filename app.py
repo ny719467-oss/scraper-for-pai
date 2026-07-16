@@ -117,6 +117,7 @@ job_state = {
     "preview_columns": None,
     "preview_rows": None,
     "preview_truncated": False,
+    "district_files": [],
 }
 
 PREVIEW_ROW_LIMIT = 100
@@ -147,6 +148,12 @@ def clean_state_name(raw_text):
     if not raw_text:
         return raw_text
     return raw_text.split("[")[0].strip()
+
+
+def safe_filename_part(text):
+    """Sanitize a label (state/district name) for use in a filename."""
+    cleaned = re.sub(r"[^\w\-]+", "_", (text or "").strip())
+    return cleaned.strip("_") or "unknown"
 
 
 def normalize_option_key(raw_text):
@@ -328,6 +335,7 @@ def run_scrape_job(state_name, headless=True):
         job_state["preview_columns"] = None
         job_state["preview_rows"] = None
         job_state["preview_truncated"] = False
+        job_state["district_files"] = []
 
         log("Launching browser...")
         driver = build_driver(headless=headless)
@@ -358,6 +366,7 @@ def run_scrape_job(state_name, headless=True):
         # STATE_LIST, always English) so output stays consistent even though
         # the portal's own dropdown language can vary between runs.
         clean_state = clean_state_name(state_name)
+        safe_state = safe_filename_part(clean_state)
         job_state["state_selected"] = clean_state
         log(f"Selected state (from page): {confirmed_state_text}")
 
@@ -383,6 +392,8 @@ def run_scrape_job(state_name, headless=True):
 
                 block_dropdown = wait_for_options_loaded(wait, "ddl_Block")
                 blocks = [o.text.strip() for o in block_dropdown.options if not is_placeholder_option(o.text)]
+
+                district_rows = []
 
                 for block in blocks:
                     if job_state["stop_requested"]:
@@ -414,12 +425,31 @@ def run_scrape_job(state_name, headless=True):
                         df.insert(4, "Block", block)
 
                         all_rows.append(df)
+                        district_rows.append(df)
                         job_state["rows_collected"] += len(df)
                         log(f"  + {district} / {block}: {len(df)} rows")
 
                     except (TimeoutException, NoSuchElementException, StaleElementReferenceException):
                         log(f"  [skip] {district} / {block} (no data / load issue)")
                         continue
+
+                # Save this district's own file as soon as it's done, so it
+                # can be downloaded immediately instead of waiting for the
+                # whole state to finish.
+                if district_rows:
+                    district_df = pd.concat(district_rows, ignore_index=True)
+                    safe_district = safe_filename_part(clean_state_name(district))
+                    district_filename = (
+                        f"pai_{safe_state}_{safe_district}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+                    )
+                    district_filepath = os.path.join(OUTPUT_DIR, district_filename)
+                    district_df.to_excel(district_filepath, index=False)
+                    job_state["district_files"].append({
+                        "district": district,
+                        "filename": district_filename,
+                        "rows": len(district_df),
+                    })
+                    log(f"Saved {len(district_df)} rows for {district} to {district_filename}")
 
             except (TimeoutException, NoSuchElementException, StaleElementReferenceException):
                 log(f"[skip] District: {district} (dropdown issue)")
@@ -432,7 +462,6 @@ def run_scrape_job(state_name, headless=True):
         else:
             final_df = pd.DataFrame()
 
-        safe_state = clean_state.replace(" ", "_")
         filename = f"pai_{safe_state}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         filepath = os.path.join(OUTPUT_DIR, filename)
         final_df.to_excel(filepath, index=False)
@@ -516,6 +545,7 @@ def api_status():
         "preview_columns": job_state["preview_columns"],
         "preview_rows": job_state["preview_rows"],
         "preview_truncated": job_state["preview_truncated"],
+        "district_files": job_state["district_files"],
     })
 
 
@@ -528,6 +558,20 @@ def api_download():
         as_attachment=True,
         download_name=os.path.basename(job_state["output_file"]),
     )
+
+
+@app.route("/api/download_district/<path:filename>")
+def api_download_district(filename):
+    safe_name = os.path.basename(filename)
+    # Only serve filenames this run itself generated and recorded - basename()
+    # strips any directory component, and the membership check below rejects
+    # anything we didn't put there ourselves.
+    if not any(d["filename"] == safe_name for d in job_state["district_files"]):
+        return jsonify({"ok": False, "error": "No such district file"}), 404
+    filepath = os.path.join(OUTPUT_DIR, safe_name)
+    if not os.path.exists(filepath):
+        return jsonify({"ok": False, "error": "File not found"}), 404
+    return send_file(filepath, as_attachment=True, download_name=safe_name)
 
 
 if __name__ == "__main__":

@@ -117,6 +117,23 @@
     font-size: 14px;
   }
   .preview-note { font-size: 12px; color: var(--muted); margin: 0 0 10px 0; }
+  .district-download-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .district-download-row:last-child { border-bottom: none; }
+  .district-download-row .district-name { font-weight: 600; }
+  .district-download-row .district-rows { color: var(--muted); font-size: 12px; margin-left: 6px; }
+  a.download-link.small {
+    margin-top: 0;
+    padding: 6px 12px;
+    font-size: 12px;
+  }
   .preview-table-wrap {
     overflow: auto;
     max-height: 420px;
@@ -182,6 +199,12 @@
     <div id="downloadArea"></div>
   </div>
 
+  <div class="panel" id="districtDownloadsPanel" style="display:none;">
+    <label style="margin-bottom:8px;">District downloads</label>
+    <p class="preview-note">Each district's file becomes downloadable as soon as that district finishes - no need to wait for the whole state.</p>
+    <div id="districtDownloadsList"></div>
+  </div>
+
   <div class="panel">
     <label style="margin-bottom:8px;">Live log</label>
     <div id="log"></div>
@@ -231,6 +254,22 @@ function renderPreview(columns, rows, truncated, totalRows) {
   panel.style.display = 'block';
 }
 
+function renderDistrictDownloads(districtFiles) {
+  const panel = document.getElementById('districtDownloadsPanel');
+  if (!districtFiles || !districtFiles.length) {
+    panel.style.display = 'none';
+    return;
+  }
+
+  document.getElementById('districtDownloadsList').innerHTML = districtFiles.map(d => `
+    <div class="district-download-row">
+      <span><span class="district-name">${escapeHtml(d.district)}</span><span class="district-rows">${d.rows} rows</span></span>
+      <a class="download-link small" href="/api/download_district/${encodeURIComponent(d.filename)}">Download</a>
+    </div>
+  `).join('');
+  panel.style.display = 'block';
+}
+
 async function startScrape() {
   const state = document.getElementById('stateSelect').value;
   const headless = document.getElementById('headlessCheck').checked;
@@ -238,6 +277,7 @@ async function startScrape() {
   document.getElementById('downloadArea').innerHTML = '';
   document.getElementById('log').textContent = '';
   document.getElementById('previewPanel').style.display = 'none';
+  document.getElementById('districtDownloadsPanel').style.display = 'none';
 
   const res = await fetch('/api/start', {
     method: 'POST',
@@ -274,6 +314,7 @@ async function poll() {
     document.getElementById('progressFill').style.width = s.progress_pct + '%';
     document.getElementById('log').textContent = s.logs.join('\n');
     document.getElementById('log').scrollTop = document.getElementById('log').scrollHeight;
+    renderDistrictDownloads(s.district_files);
 
     if (s.error) {
       setBadge('error');
